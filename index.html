@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tempo to Gekko</title>
 <style>
-  :root { --bg:#f6f7f9; --fg:#1d2330; --muted:#667085; --card:#fff; --line:#d9dde4; --accent:#2457d6; --warn:#b42318; }
+  :root { --bg:#f6f7f9; --fg:#1d2330; --muted:#566073; --card:#fff; --line:#d9dde4; --accent:#2457d6; --on-accent:#fff; --warn:#b42318; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#14171d; --fg:#e8eaf0; --muted:#98a2b3; --card:#1d222b; --line:#323a47; --accent:#6c93ff; --warn:#ff8a80; }
+    :root { --bg:#14171d; --fg:#e8eaf0; --muted:#98a2b3; --card:#1d222b; --line:#323a47; --accent:#6c93ff; --on-accent:#0b1020; --warn:#ff8a80; }
   }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
@@ -18,10 +18,14 @@
   #drop { border:2px dashed var(--line); border-radius:10px; padding:28px 16px; text-align:center; cursor:pointer; }
   #drop.over { border-color:var(--accent); }
   button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
   button:disabled { opacity:.5; cursor:default; }
   .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
   textarea { width:100%; min-height:360px; font:13px/1.45 ui-monospace, Menlo, monospace; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:10px; resize:vertical; }
+  .field { display:block; margin-top:14px; font-weight:600; }
+  .field input { display:block; width:100%; max-width:260px; margin-top:4px; font:inherit; padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); }
+  .hint { display:block; font-weight:400; font-size:.85rem; color:var(--muted); margin-top:2px; }
+  .field input + .hint { margin-top:4px; }
   #status { color:var(--muted); font-size:.9rem; margin:8px 0 0; }
   #messages { margin:0 0 12px; padding-left:18px; font-size:.9rem; color:var(--muted); }
   #messages .warn { color:var(--warn); font-weight:600; }
@@ -38,6 +42,11 @@
   <div class="card">
     <div id="drop" tabindex="0">Drop the Tempo .xls file here, or click to choose it</div>
     <input id="file" type="file" accept=".xls" class="hidden">
+    <label class="field">General meetings Jira issue
+      <span class="hint">The common Jira issue you log all your meetings on (daily, planning, workshops&hellip;).</span>
+      <input id="meetingIssue" type="text" value="EHEALTH-9360" spellcheck="false" autocomplete="off">
+      <span class="hint">Worklogs on this issue use their Work Description as the line text. Separate several keys with commas.</span>
+    </label>
     <p id="status">Loading converter&hellip;</p>
     <p id="error" class="hidden"></p>
   </div>
@@ -55,7 +64,7 @@
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-let pyodide, convert, outName = "gekko.txt";
+let pyodide, convert, outName = "gekko.txt", lastData = null;
 
 function setStatus(text) { $("status").textContent = text; }
 function showError(text) { $("error").textContent = text; $("error").classList.toggle("hidden", !text); }
@@ -76,14 +85,23 @@ async function init() {
   }
 }
 
+function meetingKeys() {
+  return $("meetingIssue").value.split(",").map(k => k.trim().toUpperCase()).filter(Boolean);
+}
+
 async function handleFile(file) {
   if (!file) return;
+  lastData = new Uint8Array(await file.arrayBuffer());
+  outName = file.name.replace(/\.[^.]+$/, "") + "_gekko.txt";
+  await run(file.name);
+}
+
+async function run(name) {
   showError("");
   if (!convert) { showError("The converter is still loading, try again in a moment."); return; }
-  setStatus("Converting " + file.name + "…");
+  setStatus("Converting " + name + "…");
   try {
-    const data = new Uint8Array(await file.arrayBuffer());
-    const res = convert(data).toJs();
+    const res = convert(lastData.slice(), meetingKeys()).toJs();
     const [text, messages] = res;
     $("out").value = text;
     $("messages").replaceChildren(...messages.map(m => {
@@ -92,15 +110,20 @@ async function handleFile(file) {
       if (m.startsWith("WARNING")) li.className = "warn";
       return li;
     }));
-    outName = file.name.replace(/\.[^.]+$/, "") + "_gekko.txt";
     $("result").classList.remove("hidden");
-    setStatus("Converted " + file.name + ".");
+    setStatus("Converted " + name + ".");
   } catch (e) {
     $("result").classList.add("hidden");
     setStatus("");
     showError("Conversion failed. Is this a Tempo Worklogs .xls export?\n\n" + e);
   }
 }
+
+try { $("meetingIssue").value = localStorage.getItem("meetingIssue") || $("meetingIssue").value; } catch {}
+$("meetingIssue").addEventListener("change", () => {
+  try { localStorage.setItem("meetingIssue", $("meetingIssue").value); } catch {}
+  if (lastData) run("the file");
+});
 
 $("drop").addEventListener("click", () => $("file").click());
 $("drop").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") $("file").click(); });

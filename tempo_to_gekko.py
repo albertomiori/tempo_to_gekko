@@ -100,12 +100,12 @@ def issue_part(issue, hours, summary, issue_type):
             "prefix": prefix, "idx": -1}
 
 
-def day_parts(day_rows):
+def day_parts(day_rows, meeting_issues=WORK_DESCRIPTION_ISSUES):
     """-> (issue_parts sorted by key, meeting_parts in export order)"""
     issues = {}
     meetings = []
     for row in day_rows:
-        if row["issue"] in WORK_DESCRIPTION_ISSUES:
+        if row["issue"] in meeting_issues:
             meetings.append({"kind": "meeting", "hours": row["hours"],
                              "bare": meeting_text(row), "prefix": "", "idx": row["idx"]})
         else:
@@ -141,7 +141,7 @@ def compose(parts):
     return total, ", ".join(f"{p['bare']} ({format_duration(p['hours'])})" for p in ordered)
 
 
-def build_lines(rows):
+def build_lines(rows, meeting_issues=WORK_DESCRIPTION_ISSUES):
     """-> (lines, manual_review); each is a list of (date, hours, text)"""
     by_day = defaultdict(list)
     for row in rows:
@@ -151,7 +151,7 @@ def build_lines(rows):
     manual_review = []  # (date, hours, text)
 
     for work_date in sorted(by_day):
-        issues, meetings = day_parts(by_day[work_date])
+        issues, meetings = day_parts(by_day[work_date], meeting_issues)
         big_i = [p for p in issues if p["hours"] >= MIN_HOURS]
         small_i = [p for p in issues if p["hours"] < MIN_HOURS]
         big_m = [[p] for p in meetings if p["hours"] >= MIN_HOURS]
@@ -252,12 +252,14 @@ def render_output(lines, manual_review, rows):
     return "".join(out), messages
 
 
-def convert_bytes(data):
-    """xls bytes -> (text, messages); entry point for the browser version"""
+def convert_bytes(data, meeting_issues=None):
+    """xls bytes -> (text, messages); entry point for the browser version.
+    meeting_issues: iterable of issue keys treated as meetings (default WORK_DESCRIPTION_ISSUES)."""
     if hasattr(data, "to_py"):      # JS Uint8Array -> memoryview
         data = data.to_py()
     rows = load_worklogs(data=bytes(data))
-    lines, manual_review = build_lines(rows)
+    keys = set(meeting_issues) if meeting_issues else WORK_DESCRIPTION_ISSUES
+    lines, manual_review = build_lines(rows, keys)
     return render_output(lines, manual_review, rows)
 
 
