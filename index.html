@@ -75,7 +75,7 @@ async function init() {
     setStatus("Installing xlrd…");
     await pyodide.loadPackage("micropip");
     await pyodide.pyimport("micropip").install("xlrd==2.0.1");
-    const src = await (await fetch("tempo_to_gekko.py")).text();
+    const src = await (await fetch("tempo_to_gekko.py?t=" + Date.now(), { cache: "no-store" })).text();
     pyodide.FS.writeFile("tempo_to_gekko.py", src);
     convert = pyodide.pyimport("tempo_to_gekko").convert_bytes;
     setStatus("Ready.");
